@@ -246,27 +246,67 @@ class InstalledAppsRepository(private val context: Context) {
       }
     }
 
-  fun launchApp(activityContext: Context, app: AppItem, sourceBounds: Rect?): Boolean {
+  fun launchApp(
+    activityContext: Context,
+    app: AppItem,
+    sourceBounds: Rect?,
+    rootView: android.view.View? = null,
+    mode: com.example.model.LaunchAnimationMode = com.example.model.LaunchAnimationMode.SCALE_UP_ICON,
+  ): Boolean {
+    val startX = sourceBounds?.left?.toInt() ?: 0
+    val startY = sourceBounds?.top?.toInt() ?: 0
+    val startW = sourceBounds?.width?.toInt()?.coerceAtLeast(1) ?: 100
+    val startH = sourceBounds?.height?.toInt()?.coerceAtLeast(1) ?: 100
+
     val optionsBundle =
       try {
-        ActivityOptions.makeCustomAnimation(activityContext, android.R.anim.fade_in, 0).toBundle()
+        when {
+          rootView != null &&
+            sourceBounds != null &&
+            !sourceBounds.isEmpty &&
+            mode == com.example.model.LaunchAnimationMode.SCALE_UP_ICON -> {
+            ActivityOptions.makeScaleUpAnimation(rootView, startX, startY, startW, startH)
+              .toBundle()
+          }
+          rootView != null &&
+            sourceBounds != null &&
+            !sourceBounds.isEmpty &&
+            mode == com.example.model.LaunchAnimationMode.CLIP_REVEAL_ICON -> {
+            ActivityOptions.makeClipRevealAnimation(rootView, startX, startY, startW, startH)
+              .toBundle()
+          }
+          else -> {
+            ActivityOptions.makeCustomAnimation(activityContext, android.R.anim.fade_in, 0)
+              .toBundle()
+          }
+        }
       } catch (_: Exception) {
+        null
+      }
+
+    val screenBoundsRect =
+      if (sourceBounds != null && !sourceBounds.isEmpty) {
+        val loc = IntArray(2)
+        rootView?.getLocationOnScreen(loc)
+        android.graphics.Rect(
+          loc[0] + startX,
+          loc[1] + startY,
+          loc[0] + startX + startW,
+          loc[1] + startY + startH,
+        )
+      } else {
         null
       }
 
     try {
       val la = launcherApps
       if (la != null) {
-        val boundsRect =
-          sourceBounds?.let {
-            android.graphics.Rect(
-              it.left.toInt(),
-              it.top.toInt(),
-              it.right.toInt(),
-              it.bottom.toInt(),
-            )
-          }
-        la.startMainActivity(app.componentName, Process.myUserHandle(), boundsRect, optionsBundle)
+        la.startMainActivity(
+          app.componentName,
+          Process.myUserHandle(),
+          screenBoundsRect,
+          optionsBundle,
+        )
         return true
       }
     } catch (_: Exception) {}

@@ -159,6 +159,12 @@ enum class AnimationCurveStyle(val label: String) {
   CRISP_FAST("Crisp Linear"),
 }
 
+enum class LaunchAnimationMode(val label: String) {
+  SCALE_UP_ICON("Window Scale"),
+  CLIP_REVEAL_ICON("Clip Reveal"),
+  MORPH_CARD("Morph Card"),
+}
+
 enum class DesktopScrollMode(val label: String) {
   PAGED("Paged Desktop"),
   VERTICAL("Vertical Scroll"),
@@ -178,6 +184,7 @@ data class LauncherPreferences(
   val blurIconsOnTransition: Boolean = true,
   val blurWallpaperOnTransition: Boolean = true,
   val blurRadiusDp: Int = 22,
+  val launchAnimationMode: LaunchAnimationMode = LaunchAnimationMode.SCALE_UP_ICON,
   val animationCurve: AnimationCurveStyle = AnimationCurveStyle.SPRING_BOUNCE,
   val animationDurationMs: Int = 290,
   val springDampingRatio: Float = 0.82f,

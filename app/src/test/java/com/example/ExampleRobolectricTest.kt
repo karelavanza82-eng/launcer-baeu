@@ -156,6 +156,9 @@ class ExampleRobolectricTest {
           onChangeBlurRadius = { radius ->
             state = state.copy(preferences = state.preferences.copy(blurRadiusDp = radius))
           },
+          onSelectLaunchMode = { mode ->
+            state = state.copy(preferences = state.preferences.copy(launchAnimationMode = mode))
+          },
           onSelectAnimationCurve = { curve ->
             state = state.copy(preferences = state.preferences.copy(animationCurve = curve))
           },
@@ -189,6 +192,7 @@ class ExampleRobolectricTest {
           onSelectGridColumns = { cols ->
             state = state.copy(preferences = state.preferences.copy(gridColumns = cols))
           },
+          onRefreshIconPacks = {},
           onRequestDefaultLauncher = {},
         )
       }

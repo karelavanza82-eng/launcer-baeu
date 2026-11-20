@@ -72,6 +72,7 @@ import com.example.model.BuiltInIconPack
 import com.example.model.DesktopScrollMode
 import com.example.model.ExternalIconPackInfo
 import com.example.model.IconShapeStyle
+import com.example.model.LaunchAnimationMode
 import com.example.model.LauncherPreferences
 import com.example.model.PageTransitionEffect
 import kotlin.math.roundToInt
@@ -86,6 +87,7 @@ fun LauncherSettingsSheet(
   onToggleBlurIcons: (Boolean) -> Unit,
   onToggleBlurWallpaper: (Boolean) -> Unit,
   onChangeBlurRadius: (Int) -> Unit,
+  onSelectLaunchMode: (LaunchAnimationMode) -> Unit,
   onSelectAnimationCurve: (AnimationCurveStyle) -> Unit,
   onChangeAnimationDuration: (Int) -> Unit,
   onChangeSpringDamping: (Float) -> Unit,
@@ -188,6 +190,39 @@ fun LauncherSettingsSheet(
             valueRange = 0f..32f,
             onValueChange = { onChangeBlurRadius(it.roundToInt()) },
           )
+          SettingsDivider()
+          Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+              Icon(
+                imageVector = Icons.Rounded.Animation,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(22.dp),
+              )
+              Spacer(modifier = Modifier.width(14.dp))
+              Text(
+                text = stringResource(R.string.settings_launch_mode_title),
+                style = MaterialTheme.typography.titleMedium,
+              )
+            }
+            Spacer(modifier = Modifier.height(10.dp))
+            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+              LaunchAnimationMode.entries.forEachIndexed { index, mode ->
+                SegmentedButton(
+                  selected = preferences.launchAnimationMode == mode,
+                  onClick = { onSelectLaunchMode(mode) },
+                  shape =
+                    SegmentedButtonDefaults.itemShape(
+                      index = index,
+                      count = LaunchAnimationMode.entries.size,
+                    ),
+                  modifier = Modifier.testTag("launch_mode_${mode.name.lowercase()}"),
+                ) {
+                  Text(mode.label, maxLines = 1)
+                }
+              }
+            }
+          }
           SettingsDivider()
           Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {

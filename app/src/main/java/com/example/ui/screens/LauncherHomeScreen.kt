@@ -92,6 +92,7 @@ import com.example.model.AnimationCurveStyle
 import com.example.model.AppItem
 import com.example.model.DesktopScrollMode
 import com.example.model.IconShapeStyle
+import com.example.model.LaunchAnimationMode
 import com.example.model.LauncherUiState
 import com.example.model.PageTransitionEffect
 import com.example.model.WallpaperStyle
@@ -100,6 +101,7 @@ import com.example.ui.components.AppIconItem
 import com.example.ui.components.AppTransitionOverlay
 import com.example.ui.components.AuraWallpaper
 import com.example.ui.components.FrostedDock
+import com.example.ui.components.rememberLauncherAnimationSpec
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.roundToInt
@@ -141,6 +143,7 @@ fun LauncherHomeScreen(
   onToggleBlurIcons: (Boolean) -> Unit,
   onToggleBlurWallpaper: (Boolean) -> Unit,
   onChangeBlurRadius: (Int) -> Unit,
+  onSelectLaunchMode: (LaunchAnimationMode) -> Unit,
   onSelectAnimationCurve: (AnimationCurveStyle) -> Unit,
   onChangeAnimationDuration: (Int) -> Unit,
   onChangeSpringDamping: (Float) -> Unit,
@@ -152,6 +155,7 @@ fun LauncherHomeScreen(
   onToggleQuickFilterPill: (Boolean) -> Unit,
   onToggleLockLayout: (Boolean) -> Unit,
   onSelectGridColumns: (Int) -> Unit,
+  onRefreshIconPacks: () -> Unit,
   onRequestDefaultLauncher: () -> Unit,
 ) {
   val haptic = LocalHapticFeedback.current
@@ -161,9 +165,18 @@ fun LauncherHomeScreen(
 
   // Single Animatable shared cleanly into graphicsLayer & layout lambdas (ZERO recomposition per frame!)
   val transitionProgressAnim = remember { Animatable(0f) }
+  val prefs = uiState.preferences
+  val isTransitioning = uiState.activeTransition != null
+  val nativeAnimSpec =
+    rememberLauncherAnimationSpec(
+      curveStyle = prefs.animationCurve,
+      durationMs = prefs.animationDurationMs,
+      springDampingRatio = prefs.springDampingRatio,
+    )
 
   LaunchedEffect(uiState.activeTransition) {
-    if (uiState.activeTransition == null) {
+    val transition = uiState.activeTransition
+    if (transition == null) {
       transitionProgressAnim.snapTo(0f)
       onBackgroundTransitionProgress(0f)
     } else {
@@ -173,8 +186,20 @@ fun LauncherHomeScreen(
     }
   }
 
-  val prefs = uiState.preferences
-  val isTransitioning = uiState.activeTransition != null
+  // In SCALE_UP_ICON / CLIP_REVEAL_ICON modes, the OS WindowManager animates the real app window directly.
+  // We animate only the launcher desktop depth scale & blur here — zero ghost white splash card!
+  LaunchedEffect(uiState.activeTransition?.triggerId, prefs.launchAnimationMode) {
+    val transition = uiState.activeTransition ?: return@LaunchedEffect
+    if (prefs.launchAnimationMode != LaunchAnimationMode.MORPH_CARD) {
+      transitionProgressAnim.snapTo(if (transition.isOpening) 0f else 1f)
+      if (transition.isOpening) {
+        transitionProgressAnim.animateTo(targetValue = 1f, animationSpec = nativeAnimSpec)
+      } else {
+        transitionProgressAnim.animateTo(targetValue = 0f, animationSpec = nativeAnimSpec)
+        onCloseAnimationFinished()
+      }
+    }
+  }
 
   // Pre-cache 8 blur RenderEffect steps for icons so 0 allocations happen during 120fps animations
   val maxIconBlurPx = with(density) { (prefs.blurRadiusDp * 0.72f).dp.toPx() }
@@ -369,7 +394,8 @@ fun LauncherHomeScreen(
                             showLabel = prefs.showLabels,
                             isEditMode = uiState.isEditMode,
                             isHiddenForTransition =
-                              uiState.activeTransition?.app?.key == app.key,
+                              prefs.launchAnimationMode == LaunchAnimationMode.MORPH_CARD &&
+                                uiState.activeTransition?.app?.key == app.key,
                             iconSize = iconSizeDp,
                             iconShapeStyle = prefs.iconShape,
                             onClick = { bounds -> onLaunchApp(app, bounds) },
@@ -414,7 +440,9 @@ fun LauncherHomeScreen(
                   app = app,
                   showLabel = prefs.showLabels,
                   isEditMode = uiState.isEditMode,
-                  isHiddenForTransition = uiState.activeTransition?.app?.key == app.key,
+                  isHiddenForTransition =
+                    prefs.launchAnimationMode == LaunchAnimationMode.MORPH_CARD &&
+                      uiState.activeTransition?.app?.key == app.key,
                   iconSize = iconSizeDp,
                   iconShapeStyle = prefs.iconShape,
                   onClick = { bounds -> onLaunchApp(app, bounds) },
@@ -473,7 +501,12 @@ fun LauncherHomeScreen(
           FrostedDock(
             dockApps = uiState.dockApps,
             isEditMode = uiState.isEditMode,
-            hiddenAppKey = uiState.activeTransition?.app?.key,
+            hiddenAppKey =
+              if (prefs.launchAnimationMode == LaunchAnimationMode.MORPH_CARD) {
+                uiState.activeTransition?.app?.key
+              } else {
+                null
+              },
             showDockBackground = prefs.showDockBackground,
             iconSize = iconSizeDp.coerceAtMost(60.dp),
             iconShapeStyle = prefs.iconShape,
@@ -502,19 +535,21 @@ fun LauncherHomeScreen(
       }
     }
 
-    // 4. 120fps Zero-Recomposition Icon-to-App Opening & Closing Transition Overlay
-    uiState.activeTransition?.let { transition ->
-      val liveBounds = iconBoundsMap[transition.app.key] ?: transition.sourceBounds
-      AppTransitionOverlay(
-        transition = transition.copy(sourceBounds = liveBounds),
-        progressAnim = transitionProgressAnim,
-        curveStyle = prefs.animationCurve,
-        durationMs = prefs.animationDurationMs,
-        springDampingRatio = prefs.springDampingRatio,
-        iconShapeStyle = prefs.iconShape,
-        onOpenAnimationPeak = onOpenAnimationPeak,
-        onCloseAnimationFinished = onCloseAnimationFinished,
-      )
+    // 4. Optional Morph Card Overlay (only rendered when user chooses MORPH_CARD mode)
+    if (prefs.launchAnimationMode == LaunchAnimationMode.MORPH_CARD) {
+      uiState.activeTransition?.let { transition ->
+        val liveBounds = iconBoundsMap[transition.app.key] ?: transition.sourceBounds
+        AppTransitionOverlay(
+          transition = transition.copy(sourceBounds = liveBounds),
+          progressAnim = transitionProgressAnim,
+          curveStyle = prefs.animationCurve,
+          durationMs = prefs.animationDurationMs,
+          springDampingRatio = prefs.springDampingRatio,
+          iconShapeStyle = prefs.iconShape,
+          onOpenAnimationPeak = onOpenAnimationPeak,
+          onCloseAnimationFinished = onCloseAnimationFinished,
+        )
+      }
     }
 
     // 5. Long-press App Context Menu
@@ -568,6 +603,7 @@ fun LauncherHomeScreen(
         onSelectPack = onSelectIconPack,
         onSelectShape = onSelectIconShape,
         onChangeIconSize = onChangeIconSize,
+        onRefreshPacks = onRefreshIconPacks,
         onDismiss = onCloseIconPackPicker,
       )
     }
@@ -586,6 +622,7 @@ fun LauncherHomeScreen(
         onToggleBlurIcons = onToggleBlurIcons,
         onToggleBlurWallpaper = onToggleBlurWallpaper,
         onChangeBlurRadius = onChangeBlurRadius,
+        onSelectLaunchMode = onSelectLaunchMode,
         onSelectAnimationCurve = onSelectAnimationCurve,
         onChangeAnimationDuration = onChangeAnimationDuration,
         onChangeSpringDamping = onChangeSpringDamping,

@@ -46,6 +46,26 @@ import com.example.model.IconShapeStyle
 import kotlin.math.roundToInt
 
 @Composable
+fun rememberLauncherAnimationSpec(
+  curveStyle: AnimationCurveStyle,
+  durationMs: Int,
+  springDampingRatio: Float,
+): AnimationSpec<Float> =
+  remember(curveStyle, durationMs, springDampingRatio) {
+    when (curveStyle) {
+      AnimationCurveStyle.SPRING_BOUNCE -> {
+        val normalized = ((500f - durationMs) / 340f).coerceIn(0f, 1f)
+        val stiffness = lerp(220f, 880f, normalized)
+        spring(dampingRatio = springDampingRatio.coerceIn(0.65f, 1.0f), stiffness = stiffness)
+      }
+      AnimationCurveStyle.FLUID_SMOOTH ->
+        tween(durationMillis = durationMs, easing = FastOutSlowInEasing)
+      AnimationCurveStyle.CRISP_FAST ->
+        tween(durationMillis = durationMs, easing = LinearOutSlowInEasing)
+    }
+  }
+
+@Composable
 fun AppTransitionOverlay(
   transition: ActiveAppTransition,
   progressAnim: Animatable<Float, AnimationVector1D>,
@@ -57,21 +77,7 @@ fun AppTransitionOverlay(
   onCloseAnimationFinished: () -> Unit,
   modifier: Modifier = Modifier,
 ) {
-  val animSpec: AnimationSpec<Float> =
-    remember(curveStyle, durationMs, springDampingRatio) {
-      when (curveStyle) {
-        AnimationCurveStyle.SPRING_BOUNCE -> {
-          // Map durationMs (160..500) to spring stiffness (950..200)
-          val normalized = ((500f - durationMs) / 340f).coerceIn(0f, 1f)
-          val stiffness = lerp(220f, 880f, normalized)
-          spring(dampingRatio = springDampingRatio.coerceIn(0.65f, 1.0f), stiffness = stiffness)
-        }
-        AnimationCurveStyle.FLUID_SMOOTH ->
-          tween(durationMillis = durationMs, easing = FastOutSlowInEasing)
-        AnimationCurveStyle.CRISP_FAST ->
-          tween(durationMillis = durationMs, easing = LinearOutSlowInEasing)
-      }
-    }
+  val animSpec = rememberLauncherAnimationSpec(curveStyle, durationMs, springDampingRatio)
 
   LaunchedEffect(transition.triggerId) {
     progressAnim.snapTo(if (transition.isOpening) 0f else 1f)

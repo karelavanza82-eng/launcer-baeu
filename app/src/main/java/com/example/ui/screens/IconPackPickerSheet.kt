@@ -29,15 +29,18 @@ import androidx.compose.material.icons.rounded.Apps
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Palette
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -67,6 +70,7 @@ fun IconPackPickerSheet(
   onSelectPack: (String) -> Unit,
   onSelectShape: (IconShapeStyle) -> Unit,
   onChangeIconSize: (Int) -> Unit,
+  onRefreshPacks: () -> Unit,
   onDismiss: () -> Unit,
   modifier: Modifier = Modifier,
 ) {
@@ -82,7 +86,7 @@ fun IconPackPickerSheet(
     Column(
       modifier =
         Modifier.navigationBarsPadding()
-          .heightIn(max = 520.dp)
+          .heightIn(max = 560.dp)
           .verticalScroll(rememberScrollState())
           .padding(vertical = 18.dp)
     ) {
@@ -110,6 +114,136 @@ fun IconPackPickerSheet(
             imageVector = Icons.Rounded.Close,
             contentDescription = stringResource(R.string.cd_close),
           )
+        }
+      }
+
+      Spacer(modifier = Modifier.height(14.dp))
+
+      // Installed third-party Play Store / APK icon packs (front and center)
+      Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+      ) {
+        Text(
+          text =
+            if (externalPacks.isEmpty()) stringResource(R.string.icon_pack_installed_section)
+            else "${stringResource(R.string.icon_pack_installed_section)} (${externalPacks.size})",
+          style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
+          color = MaterialTheme.colorScheme.primary,
+          modifier = Modifier.weight(1f),
+        )
+        TextButton(
+          onClick = onRefreshPacks,
+          modifier = Modifier.heightIn(min = 48.dp).testTag("icon_pack_refresh_button"),
+        ) {
+          Icon(
+            imageVector = Icons.Rounded.Refresh,
+            contentDescription = null,
+            modifier = Modifier.size(16.dp),
+          )
+          Spacer(modifier = Modifier.width(6.dp))
+          Text(stringResource(R.string.icon_pack_refresh))
+        }
+      }
+
+      if (externalPacks.isEmpty()) {
+        Surface(
+          shape = RoundedCornerShape(18.dp),
+          color = MaterialTheme.colorScheme.surfaceContainerHigh,
+          modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp),
+        ) {
+          Column(modifier = Modifier.padding(14.dp)) {
+            Text(
+              text = stringResource(R.string.icon_pack_none_installed),
+              style = MaterialTheme.typography.bodyMedium,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(modifier = Modifier.height(10.dp))
+            OutlinedButton(
+              onClick = onRefreshPacks,
+              modifier = Modifier.heightIn(min = 48.dp),
+              shape = RoundedCornerShape(14.dp),
+            ) {
+              Icon(
+                imageVector = Icons.Rounded.Refresh,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+              )
+              Spacer(modifier = Modifier.width(8.dp))
+              Text(stringResource(R.string.icon_pack_refresh))
+            }
+          }
+        }
+      } else {
+        LazyRow(
+          contentPadding = PaddingValues(horizontal = 20.dp),
+          horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+          items(externalPacks, key = { it.packageName }) { pack ->
+            val selected = selectedPackId == pack.id
+            Column(
+              modifier =
+                Modifier.width(88.dp)
+                  .clip(RoundedCornerShape(18.dp))
+                  .clickable { onSelectPack(pack.id) }
+                  .padding(vertical = 6.dp)
+                  .testTag("external_icon_pack_${pack.packageName}"),
+              horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+              Box(
+                modifier =
+                  Modifier.size(58.dp)
+                    .clip(iconShapeFor(selectedShape, 58.dp))
+                    .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                    .border(
+                      width = if (selected) 2.5.dp else 1.dp,
+                      color =
+                        if (selected) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.outlineVariant,
+                      shape = iconShapeFor(selectedShape, 58.dp),
+                    ),
+                contentAlignment = Alignment.Center,
+              ) {
+                if (pack.previewIcon != null) {
+                  Image(
+                    bitmap = pack.previewIcon,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.size(58.dp),
+                  )
+                } else {
+                  Icon(imageVector = Icons.Rounded.Apps, contentDescription = null)
+                }
+                if (selected) {
+                  Box(
+                    modifier =
+                      Modifier.align(Alignment.BottomEnd)
+                        .padding(3.dp)
+                        .size(18.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primary),
+                    contentAlignment = Alignment.Center,
+                  ) {
+                    Icon(
+                      imageVector = Icons.Rounded.Check,
+                      contentDescription = null,
+                      tint = MaterialTheme.colorScheme.onPrimary,
+                      modifier = Modifier.size(12.dp),
+                    )
+                  }
+                }
+              }
+              Spacer(modifier = Modifier.height(6.dp))
+              Text(
+                text = pack.label,
+                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+              )
+            }
+          }
         }
       }
 
@@ -185,76 +319,6 @@ fun IconPackPickerSheet(
               overflow = TextOverflow.Ellipsis,
               textAlign = TextAlign.Center,
             )
-          }
-        }
-      }
-
-      Spacer(modifier = Modifier.height(14.dp))
-
-      // Installed third-party Android icon packs
-      Text(
-        text = stringResource(R.string.icon_pack_installed_section),
-        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-        color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp),
-      )
-
-      if (externalPacks.isEmpty()) {
-        Text(
-          text = stringResource(R.string.icon_pack_none_installed),
-          style = MaterialTheme.typography.bodyMedium,
-          color = MaterialTheme.colorScheme.onSurfaceVariant,
-          modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp),
-        )
-      } else {
-        LazyRow(
-          contentPadding = PaddingValues(horizontal = 20.dp),
-          horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-          items(externalPacks, key = { it.packageName }) { pack ->
-            val selected = selectedPackId == pack.id
-            Column(
-              modifier =
-                Modifier.width(86.dp)
-                  .clip(RoundedCornerShape(18.dp))
-                  .clickable { onSelectPack(pack.id) }
-                  .padding(vertical = 6.dp),
-              horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-              Box(
-                modifier =
-                  Modifier.size(58.dp)
-                    .clip(iconShapeFor(selectedShape, 58.dp))
-                    .background(MaterialTheme.colorScheme.surfaceContainerHighest)
-                    .border(
-                      width = if (selected) 2.5.dp else 1.dp,
-                      color =
-                        if (selected) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.outlineVariant,
-                      shape = iconShapeFor(selectedShape, 58.dp),
-                    ),
-                contentAlignment = Alignment.Center,
-              ) {
-                if (pack.previewIcon != null) {
-                  Image(
-                    bitmap = pack.previewIcon,
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.size(58.dp),
-                  )
-                } else {
-                  Icon(imageVector = Icons.Rounded.Apps, contentDescription = null)
-                }
-              }
-              Spacer(modifier = Modifier.height(6.dp))
-              Text(
-                text = pack.label,
-                style = MaterialTheme.typography.labelSmall,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                textAlign = TextAlign.Center,
-              )
-            }
           }
         }
       }

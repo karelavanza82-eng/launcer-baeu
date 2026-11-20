@@ -14,6 +14,7 @@ import com.example.model.AppItem
 import com.example.model.DesktopScrollMode
 import com.example.model.ExternalIconPackInfo
 import com.example.model.IconShapeStyle
+import com.example.model.LaunchAnimationMode
 import com.example.model.LauncherUiState
 import com.example.model.PageTransitionEffect
 import com.example.model.WallpaperStyle
@@ -125,8 +126,14 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     }
   }
 
-  fun startAppLaunch(app: AppItem, sourceBounds: Rect) {
+  fun startAppLaunch(
+    activityContext: Context,
+    rootView: android.view.View?,
+    app: AppItem,
+    sourceBounds: Rect,
+  ) {
     if (_uiState.value.activeTransition != null) return
+    val mode = _uiState.value.preferences.launchAnimationMode
     val opening =
       ActiveAppTransition(
         app = app,
@@ -134,23 +141,52 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         isOpening = true,
         triggerId = System.nanoTime(),
       )
-    pendingClosingTransition = null
-    _uiState.update {
-      it.copy(
-        isEditMode = false,
-        contextMenuApp = null,
-        isQuickFilterActive = false,
-        quickFilterQuery = "",
-        activeTransition = opening,
-      )
+
+    if (mode == LaunchAnimationMode.MORPH_CARD) {
+      pendingClosingTransition = null
+      _uiState.update {
+        it.copy(
+          isEditMode = false,
+          contextMenuApp = null,
+          isQuickFilterActive = false,
+          quickFilterQuery = "",
+          activeTransition = opening,
+        )
+      }
+    } else {
+      // Launch real Android app window IMMEDIATELY with WindowManager ScaleUp / ClipReveal from icon bounds
+      val launched = appsRepository.launchApp(activityContext, app, sourceBounds, rootView, mode)
+      if (launched) {
+        pendingClosingTransition = opening
+        _uiState.update {
+          it.copy(
+            isEditMode = false,
+            contextMenuApp = null,
+            isQuickFilterActive = false,
+            quickFilterQuery = "",
+            activeTransition = opening,
+          )
+        }
+      } else {
+        _messages.tryEmit("Unable to launch ${app.label}")
+      }
     }
   }
 
-  fun onOpenAnimationCompleted(activityContext: Context) {
+  fun onOpenAnimationCompleted(activityContext: Context, rootView: android.view.View?) {
     val transition = _uiState.value.activeTransition ?: return
     if (!transition.isOpening) return
+    val mode = _uiState.value.preferences.launchAnimationMode
+    if (mode != LaunchAnimationMode.MORPH_CARD) return
 
-    val launched = appsRepository.launchApp(activityContext, transition.app, transition.sourceBounds)
+    val launched =
+      appsRepository.launchApp(
+        activityContext,
+        transition.app,
+        transition.sourceBounds,
+        rootView,
+        mode,
+      )
     if (launched) {
       pendingClosingTransition = transition
     } else {
@@ -159,6 +195,12 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         it.copy(activeTransition = transition.copy(isOpening = false, triggerId = System.nanoTime()))
       }
       _messages.tryEmit("Unable to launch ${transition.app.label}")
+    }
+  }
+
+  fun refreshIconPacks() {
+    viewModelScope.launch {
+      externalPacksFlow.value = appsRepository.getExternalIconPacks()
     }
   }
 
@@ -387,6 +429,10 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
   fun setBlurRadiusDp(radiusDp: Int) {
     viewModelScope.launch { prefsRepository.setBlurRadiusDp(radiusDp) }
+  }
+
+  fun setLaunchAnimationMode(mode: LaunchAnimationMode) {
+    viewModelScope.launch { prefsRepository.setLaunchAnimationMode(mode) }
   }
 
   fun setAnimationCurve(curve: AnimationCurveStyle) {

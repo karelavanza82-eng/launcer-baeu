@@ -13,6 +13,7 @@ import com.example.model.AnimationCurveStyle
 import com.example.model.BuiltInIconPack
 import com.example.model.DesktopScrollMode
 import com.example.model.IconShapeStyle
+import com.example.model.LaunchAnimationMode
 import com.example.model.LauncherPreferences
 import com.example.model.PageTransitionEffect
 import com.example.model.WallpaperStyle
@@ -37,6 +38,7 @@ class LauncherPreferencesRepository(private val context: Context) {
     val BLUR_ICONS = booleanPreferencesKey("blur_icons_on_transition")
     val BLUR_WALLPAPER = booleanPreferencesKey("blur_wallpaper_on_transition")
     val BLUR_RADIUS_DP = intPreferencesKey("blur_radius_dp")
+    val LAUNCH_ANIMATION_MODE = stringPreferencesKey("launch_animation_mode")
     val ANIMATION_CURVE = stringPreferencesKey("animation_curve")
     val ANIMATION_DURATION_MS = intPreferencesKey("animation_duration_ms")
     val SPRING_DAMPING = floatPreferencesKey("spring_damping_ratio")
@@ -71,6 +73,10 @@ class LauncherPreferencesRepository(private val context: Context) {
         blurIconsOnTransition = prefs[Keys.BLUR_ICONS] ?: true,
         blurWallpaperOnTransition = prefs[Keys.BLUR_WALLPAPER] ?: true,
         blurRadiusDp = (prefs[Keys.BLUR_RADIUS_DP] ?: 22).coerceIn(0, 32),
+        launchAnimationMode =
+          prefs[Keys.LAUNCH_ANIMATION_MODE]?.let { name ->
+            LaunchAnimationMode.entries.firstOrNull { it.name == name }
+          } ?: LaunchAnimationMode.SCALE_UP_ICON,
         animationCurve =
           prefs[Keys.ANIMATION_CURVE]?.let { name ->
             AnimationCurveStyle.entries.firstOrNull { it.name == name }
@@ -142,6 +148,10 @@ class LauncherPreferencesRepository(private val context: Context) {
 
   suspend fun setBlurRadiusDp(radiusDp: Int) {
     context.launcherDataStore.edit { prefs -> prefs[Keys.BLUR_RADIUS_DP] = radiusDp.coerceIn(0, 32) }
+  }
+
+  suspend fun setLaunchAnimationMode(mode: LaunchAnimationMode) {
+    context.launcherDataStore.edit { prefs -> prefs[Keys.LAUNCH_ANIMATION_MODE] = mode.name }
   }
 
   suspend fun setAnimationCurve(curve: AnimationCurveStyle) {

@@ -18,6 +18,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.model.WallpaperStyle
 import com.example.ui.LauncherViewModel
@@ -41,6 +42,7 @@ class MainActivity : ComponentActivity() {
       AuraHomeTheme {
         val uiState by viewModel.uiState.collectAsStateWithLifecycle()
         val snackbarHostState = remember { SnackbarHostState() }
+        val rootView = LocalView.current
 
         val defaultHomeLauncher =
           rememberLauncherForActivityResult(
@@ -78,8 +80,12 @@ class MainActivity : ComponentActivity() {
           uiState = uiState,
           snackbarHostState = snackbarHostState,
           resetToFirstPageSignal = homeResetSignal,
-          onLaunchApp = { app, bounds -> viewModel.startAppLaunch(app, bounds) },
-          onOpenAnimationPeak = { viewModel.onOpenAnimationCompleted(this@MainActivity) },
+          onLaunchApp = { app, bounds ->
+            viewModel.startAppLaunch(this@MainActivity, rootView, app, bounds)
+          },
+          onOpenAnimationPeak = {
+            viewModel.onOpenAnimationCompleted(this@MainActivity, rootView)
+          },
           onCloseAnimationFinished = { viewModel.onCloseAnimationCompleted() },
           onBackgroundTransitionProgress = { progress ->
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -114,7 +120,10 @@ class MainActivity : ComponentActivity() {
           onCloseSettings = { viewModel.setShowSettings(false) },
           onOpenWallpaperPicker = { viewModel.setShowWallpaperPicker(true) },
           onCloseWallpaperPicker = { viewModel.setShowWallpaperPicker(false) },
-          onOpenIconPackPicker = { viewModel.setShowIconPackPicker(true) },
+          onOpenIconPackPicker = {
+            viewModel.refreshIconPacks()
+            viewModel.setShowIconPackPicker(true)
+          },
           onCloseIconPackPicker = { viewModel.setShowIconPackPicker(false) },
           onSelectWallpaper = { style -> viewModel.setWallpaperStyle(style) },
           onPickGalleryWallpaper = {
@@ -128,6 +137,7 @@ class MainActivity : ComponentActivity() {
           onToggleBlurIcons = { enabled -> viewModel.setBlurIconsOnTransition(enabled) },
           onToggleBlurWallpaper = { enabled -> viewModel.setBlurWallpaperOnTransition(enabled) },
           onChangeBlurRadius = { radius -> viewModel.setBlurRadiusDp(radius) },
+          onSelectLaunchMode = { mode -> viewModel.setLaunchAnimationMode(mode) },
           onSelectAnimationCurve = { curve -> viewModel.setAnimationCurve(curve) },
           onChangeAnimationDuration = { duration -> viewModel.setAnimationDurationMs(duration) },
           onChangeSpringDamping = { damping -> viewModel.setSpringDampingRatio(damping) },
@@ -139,6 +149,7 @@ class MainActivity : ComponentActivity() {
           onToggleQuickFilterPill = { show -> viewModel.setShowQuickFilterPill(show) },
           onToggleLockLayout = { locked -> viewModel.setLockLayout(locked) },
           onSelectGridColumns = { cols -> viewModel.setGridColumns(cols) },
+          onRefreshIconPacks = { viewModel.refreshIconPacks() },
           onRequestDefaultLauncher = {
             try {
               defaultHomeLauncher.launch(viewModel.createDefaultHomeIntent())

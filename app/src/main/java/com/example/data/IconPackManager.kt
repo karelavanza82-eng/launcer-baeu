@@ -4,6 +4,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.pm.ResolveInfo
 import android.content.res.Resources
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -20,7 +21,6 @@ import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import android.os.Build
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.toArgb
 import androidx.core.content.res.ResourcesCompat
@@ -46,62 +46,124 @@ class IconPackManager(private val context: Context) {
   )
 
   fun discoverExternalIconPacks(): List<ExternalIconPackInfo> {
-    val actions =
+    val intents = mutableListOf<Intent>()
+    val actionThemes =
       listOf(
         "org.adw.launcher.THEMES",
+        "org.adw.launcher.icons.ACTION_PICK_ICON",
         "com.novalauncher.THEME",
         "com.anddoes.launcher.THEME",
         "com.teslacoilsw.launcher.THEME",
+        "com.gau.go.launcherex.theme",
+        "ginlemon.smartlauncher.THEMES",
+        "ch.deletescape.lawnchair.ICONPACK",
+        "com.dlto.atom.launcher.THEME",
+        "com.fede.launcher.THEME_ICONPACK",
       )
+    actionThemes.forEach { intents.add(Intent(it)) }
+
+    val categoryThemes =
+      listOf(
+        "com.anddoes.launcher.THEME",
+        "com.novalauncher.THEME",
+        "com.teslacoilsw.launcher.THEME",
+        "org.adw.launcher.THEMES",
+        "com.fede.launcher.THEME_ICONPACK",
+      )
+    categoryThemes.forEach { cat ->
+      intents.add(Intent(Intent.ACTION_MAIN).apply { addCategory(cat) })
+    }
+
     val discovered = LinkedHashMap<String, ExternalIconPackInfo>()
-    for (action in actions) {
-      val intent = Intent(action)
-      val list =
-        try {
-          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            packageManager.queryIntentActivities(intent, PackageManager.ResolveInfoFlags.of(0L))
-          } else {
-            @Suppress("DEPRECATION")
-            packageManager.queryIntentActivities(intent, 0)
-          }
-        } catch (_: Exception) {
-          emptyList()
-        }
+    for (intent in intents) {
+      val list = queryActivitiesCompat(intent)
       for (info in list) {
-        val pkg = info.activityInfo?.packageName ?: continue
-        if (pkg == context.packageName || discovered.containsKey(pkg)) continue
-        val label =
-          try {
-            info.loadLabel(packageManager).toString().trim().ifEmpty { pkg }
-          } catch (_: Exception) {
-            pkg
-          }
-        val iconBitmap =
-          try {
-            info.loadIcon(packageManager)?.let { drawableToBitmap(it, 128).asImageBitmap() }
-          } catch (_: Exception) {
-            null
-          }
-        discovered[pkg] = ExternalIconPackInfo(packageName = pkg, label = label, previewIcon = iconBitmap)
+        addPackIfValid(info, discovered)
       }
     }
+
+    // Fallback scan: detect any installed Play Store icon pack app with appfilter.xml
+    val launcherApps =
+      queryActivitiesCompat(
+        Intent(Intent.ACTION_MAIN).apply { addCategory(Intent.CATEGORY_LAUNCHER) }
+      )
+    for (info in launcherApps) {
+      val pkg = info.activityInfo?.packageName ?: continue
+      if (pkg == context.packageName || discovered.containsKey(pkg)) continue
+      if (hasAppFilterResource(pkg)) {
+        addPackIfValid(info, discovered)
+      }
+    }
+
     return discovered.values.sortedBy { it.label.lowercase() }
+  }
+
+  private fun queryActivitiesCompat(intent: Intent): List<ResolveInfo> {
+    return try {
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        packageManager.queryIntentActivities(intent, PackageManager.ResolveInfoFlags.of(0L))
+      } else {
+        @Suppress("DEPRECATION")
+        packageManager.queryIntentActivities(intent, 0)
+      }
+    } catch (_: Exception) {
+      emptyList()
+    }
+  }
+
+  private fun hasAppFilterResource(packageName: String): Boolean {
+    return try {
+      val res = packageManager.getResourcesForApplication(packageName)
+      if (res.getIdentifier("appfilter", "xml", packageName) != 0) return true
+      if (res.getIdentifier("appfilter", "raw", packageName) != 0) return true
+      res.assets.open("appfilter.xml").use { true }
+    } catch (_: Exception) {
+      false
+    }
+  }
+
+  private fun addPackIfValid(
+    info: ResolveInfo,
+    discovered: LinkedHashMap<String, ExternalIconPackInfo>,
+  ) {
+    val pkg = info.activityInfo?.packageName ?: return
+    if (pkg == context.packageName || discovered.containsKey(pkg)) return
+    val label =
+      try {
+        info.loadLabel(packageManager).toString().trim().ifEmpty { pkg }
+      } catch (_: Exception) {
+        pkg
+      }
+    val iconBitmap =
+      try {
+        info.loadIcon(packageManager)?.let { drawableToBitmap(it, 128).asImageBitmap() }
+      } catch (_: Exception) {
+        null
+      }
+    discovered[pkg] =
+      ExternalIconPackInfo(packageName = pkg, label = label, previewIcon = iconBitmap)
   }
 
   fun loadExternalPack(packageName: String): LoadedExternalPack? {
     return try {
       val res = packageManager.getResourcesForApplication(packageName)
-      val componentMap = HashMap<String, String>(512)
-      val packageMap = HashMap<String, String>(256)
+      val componentMap = HashMap<String, String>(1024)
+      val packageMap = HashMap<String, String>(512)
       val iconBacks = mutableListOf<String>()
       var iconMask: String? = null
       var iconUpon: String? = null
       var scaleFactor = 1f
 
       val xmlResId = res.getIdentifier("appfilter", "xml", packageName)
+      val rawResId = res.getIdentifier("appfilter", "raw", packageName)
+
       val parser: XmlPullParser? =
         when {
           xmlResId != 0 -> res.getXml(xmlResId)
+          rawResId != 0 ->
+            XmlPullParserFactory.newInstance().newPullParser().apply {
+              setInput(res.openRawResource(rawResId), "UTF-8")
+            }
           else -> {
             try {
               val stream = res.assets.open("appfilter.xml")
@@ -118,35 +180,45 @@ class IconPackManager(private val context: Context) {
         var eventType = parser.eventType
         while (eventType != XmlPullParser.END_DOCUMENT) {
           if (eventType == XmlPullParser.START_TAG) {
-            when (parser.name) {
+            when (parser.name.lowercase()) {
               "item" -> {
                 val compAttr = parser.getAttributeValue(null, "component")
-                val drawableAttr = parser.getAttributeValue(null, "drawable")
+                val drawableAttr =
+                  parser
+                    .getAttributeValue(null, "drawable")
+                    ?.removePrefix("@drawable/")
+                    ?.removePrefix("drawable/")
+                    ?.trim()
                 if (!compAttr.isNullOrBlank() && !drawableAttr.isNullOrBlank()) {
-                  val normalized =
-                    compAttr
-                      .removePrefix("ComponentInfo{")
-                      .removeSuffix("}")
-                  componentMap[normalized] = drawableAttr
-                  val pkgOnly = normalized.substringBefore("/")
-                  if (pkgOnly.isNotEmpty() && !packageMap.containsKey(pkgOnly)) {
-                    packageMap[pkgOnly] = drawableAttr
+                  val normalized = normalizeComponentKey(compAttr)
+                  if (normalized != null) {
+                    componentMap[normalized] = drawableAttr
+                    val pkgOnly = normalized.substringBefore("/")
+                    if (pkgOnly.isNotEmpty() && !packageMap.containsKey(pkgOnly)) {
+                      packageMap[pkgOnly] = drawableAttr
+                    }
                   }
                 }
               }
               "iconback" -> {
                 for (i in 0 until parser.attributeCount) {
-                  val v = parser.getAttributeValue(i)
+                  val v = parser.getAttributeValue(i)?.removePrefix("@drawable/")?.trim()
                   if (!v.isNullOrBlank()) iconBacks.add(v)
                 }
               }
               "iconmask" -> {
-                iconMask = parser.getAttributeValue(null, "img1")
-                  ?: parser.getAttributeValue(null, "img")
+                iconMask =
+                  (parser.getAttributeValue(null, "img1")
+                      ?: parser.getAttributeValue(null, "img"))
+                    ?.removePrefix("@drawable/")
+                    ?.trim()
               }
               "iconupon" -> {
-                iconUpon = parser.getAttributeValue(null, "img1")
-                  ?: parser.getAttributeValue(null, "img")
+                iconUpon =
+                  (parser.getAttributeValue(null, "img1")
+                      ?: parser.getAttributeValue(null, "img"))
+                    ?.removePrefix("@drawable/")
+                    ?.trim()
               }
               "scale" -> {
                 parser.getAttributeValue(null, "factor")?.toFloatOrNull()?.let {
@@ -174,6 +246,16 @@ class IconPackManager(private val context: Context) {
     }
   }
 
+  private fun normalizeComponentKey(raw: String): String? {
+    val cleaned = raw.trim().removePrefix("ComponentInfo{").removeSuffix("}")
+    val slashIdx = cleaned.indexOf('/')
+    if (slashIdx <= 0) return null
+    val pkg = cleaned.substring(0, slashIdx).trim()
+    val clsRaw = cleaned.substring(slashIdx + 1).trim()
+    val fullCls = if (clsRaw.startsWith(".")) "$pkg$clsRaw" else clsRaw
+    return "$pkg/$fullCls".lowercase()
+  }
+
   fun resolveStyledIcon(
     component: ComponentName,
     originalDrawable: Drawable?,
@@ -185,19 +267,22 @@ class IconPackManager(private val context: Context) {
     val dominant = rawBitmap?.let { extractDominantColor(it) } ?: Color(0xFF4A5588)
 
     if (iconPackId.startsWith("pkg:") && externalPack != null) {
-      val compKey = "${component.packageName}/${component.className}"
+      val compKey = "${component.packageName}/${component.className}".lowercase()
+      val pkgKey = component.packageName.lowercase()
       val drawableName =
-        externalPack.componentToDrawable[compKey]
-          ?: externalPack.packageToDrawable[component.packageName]
+        externalPack.componentToDrawable[compKey] ?: externalPack.packageToDrawable[pkgKey]
       if (!drawableName.isNullOrBlank()) {
-        val packDrawable = loadDrawableByName(externalPack.resources, externalPack.packageName, drawableName)
+        val packDrawable =
+          loadDrawableByName(externalPack.resources, externalPack.packageName, drawableName)
         if (packDrawable != null) {
           val themedBitmap = drawableToBitmap(packDrawable, size)
           return themedBitmap to extractDominantColor(themedBitmap)
         }
       }
       if (rawBitmap != null &&
-        (externalPack.iconBacks.isNotEmpty() || externalPack.iconMask != null || externalPack.iconUpon != null)
+        (externalPack.iconBacks.isNotEmpty() ||
+          externalPack.iconMask != null ||
+          externalPack.iconUpon != null)
       ) {
         val composited = compositeWithPackTemplate(rawBitmap, externalPack, size)
         return composited to extractDominantColor(composited)
@@ -225,9 +310,7 @@ class IconPackManager(private val context: Context) {
     val rect = RectF(0f, 0f, size.toFloat(), size.toFloat())
 
     when (style) {
-      BuiltInIconPack.SYSTEM -> {
-        canvas.drawBitmap(source, 0f, 0f, null)
-      }
+      BuiltInIconPack.SYSTEM -> canvas.drawBitmap(source, 0f, 0f, null)
       BuiltInIconPack.SQUIRCLE_GLASS -> {
         val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG)
         bgPaint.shader =
@@ -244,21 +327,21 @@ class IconPackManager(private val context: Context) {
         canvas.drawBitmap(source, 0f, 0f, Paint(Paint.FILTER_BITMAP_FLAG))
         val sheen = Paint(Paint.ANTI_ALIAS_FLAG)
         sheen.shader =
-          LinearGradient(
-            0f,
-            0f,
-            0f,
-            size * 0.55f,
-            0x44FFFFFF,
-            0x00FFFFFF,
-            Shader.TileMode.CLAMP,
-          )
+          LinearGradient(0f, 0f, 0f, size * 0.55f, 0x44FFFFFF, 0x00FFFFFF, Shader.TileMode.CLAMP)
         canvas.drawRect(rect, sheen)
       }
       BuiltInIconPack.OBSIDIAN_DARK -> {
         val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG)
         bgPaint.shader =
-          LinearGradient(0f, 0f, size.toFloat(), size.toFloat(), 0xFF1A1D2E.toInt(), 0xFF0E101B.toInt(), Shader.TileMode.CLAMP)
+          LinearGradient(
+            0f,
+            0f,
+            size.toFloat(),
+            size.toFloat(),
+            0xFF1A1D2E.toInt(),
+            0xFF0E101B.toInt(),
+            Shader.TileMode.CLAMP,
+          )
         canvas.drawRect(rect, bgPaint)
         val inset = size * 0.16f
         val dst = RectF(inset, inset, size - inset, size - inset)
