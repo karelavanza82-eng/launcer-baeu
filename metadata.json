@@ -1,0 +1,6 @@
+{
+  "name": "Aura Home",
+  "description": "Native Android home screen launcher with all apps directly on the desktop, frosted favorites dock, and spring icon-to-app zoom and blur transitions.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
