@@ -24,6 +24,7 @@ import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Dock
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.PushPin
+import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -54,6 +55,7 @@ fun AppContextMenuDialog(
   onToggleDock: () -> Unit,
   onMoveLeft: () -> Unit,
   onMoveRight: () -> Unit,
+  onHideApp: () -> Unit,
   onAppInfo: () -> Unit,
   onUninstall: () -> Unit,
 ) {
@@ -66,7 +68,6 @@ fun AppContextMenuDialog(
       shadowElevation = 18.dp,
     ) {
       Column(modifier = Modifier.padding(vertical = 12.dp)) {
-        // Header with app icon and name
         Row(
           modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 10.dp),
           verticalAlignment = Alignment.CenterVertically,
@@ -143,6 +144,13 @@ fun AppContextMenuDialog(
             testTag = "context_move_right",
           )
         }
+
+        ContextMenuRow(
+          icon = Icons.Rounded.VisibilityOff,
+          label = stringResource(R.string.action_hide_app),
+          onClick = onHideApp,
+          testTag = "context_hide_app",
+        )
 
         ContextMenuRow(
           icon = Icons.Rounded.Info,

@@ -41,6 +41,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.boundsInRoot
@@ -57,6 +58,21 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
 import com.example.model.AppItem
+import com.example.model.IconShapeStyle
+
+fun iconShapeFor(style: IconShapeStyle, iconSize: Dp): Shape =
+  when (style) {
+    IconShapeStyle.SQUIRCLE -> RoundedCornerShape(iconSize * 0.28f)
+    IconShapeStyle.CIRCLE -> CircleShape
+    IconShapeStyle.ROUNDED -> RoundedCornerShape(iconSize * 0.18f)
+    IconShapeStyle.TEARDROP ->
+      RoundedCornerShape(
+        topStart = iconSize * 0.48f,
+        topEnd = iconSize * 0.48f,
+        bottomStart = iconSize * 0.48f,
+        bottomEnd = iconSize * 0.14f,
+      )
+  }
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -66,6 +82,7 @@ fun AppIconItem(
   isEditMode: Boolean,
   isHiddenForTransition: Boolean,
   iconSize: Dp = 58.dp,
+  iconShapeStyle: IconShapeStyle = IconShapeStyle.SQUIRCLE,
   onClick: (Rect) -> Unit,
   onLongClick: () -> Unit,
   onBoundsMeasured: (String, Rect) -> Unit,
@@ -76,30 +93,38 @@ fun AppIconItem(
   val pressScale by
     animateFloatAsState(
       targetValue = if (isPressed) 0.88f else if (isEditMode) 0.94f else 1f,
-      animationSpec = spring(dampingRatio = 0.72f, stiffness = 500f),
+      animationSpec = spring(dampingRatio = 0.72f, stiffness = 540f),
       label = "iconPressScale",
     )
 
-  val jiggleTransition = rememberInfiniteTransition(label = "editJiggle")
-  val jiggleRotation by
-    jiggleTransition.animateFloat(
-      initialValue = -1.6f,
-      targetValue = 1.6f,
-      animationSpec =
-        infiniteRepeatable(
-          animation = tween(durationMillis = 150),
-          repeatMode = RepeatMode.Reverse,
-        ),
-      label = "jiggleRotation",
-    )
+  // Only tick infinite jiggle animation while Edit Mode is active
+  val jiggleRotation =
+    if (isEditMode) {
+      val jiggleTransition = rememberInfiniteTransition(label = "editJiggle")
+      val angle by
+        jiggleTransition.animateFloat(
+          initialValue = -1.6f,
+          targetValue = 1.6f,
+          animationSpec =
+            infiniteRepeatable(
+              animation = tween(durationMillis = 150),
+              repeatMode = RepeatMode.Reverse,
+            ),
+          label = "jiggleRotation",
+        )
+      angle
+    } else {
+      0f
+    }
 
   var latestBounds = remember(app.key) { Rect.Zero }
   val cdText = stringResource(R.string.cd_app_icon, app.label)
+  val iconShape = remember(iconShapeStyle, iconSize) { iconShapeFor(iconShapeStyle, iconSize) }
 
   Column(
     modifier =
       modifier
-        .widthIn(min = 56.dp)
+        .widthIn(min = 52.dp)
         .clip(RoundedCornerShape(18.dp))
         .combinedClickable(
           interactionSource = interactionSource,
@@ -113,11 +138,11 @@ fun AppIconItem(
           },
           onLongClick = onLongClick,
         )
-        .padding(horizontal = 4.dp, vertical = 6.dp)
+        .padding(horizontal = 3.dp, vertical = 5.dp)
         .graphicsLayer {
           scaleX = pressScale
           scaleY = pressScale
-          rotationZ = if (isEditMode) jiggleRotation else 0f
+          rotationZ = jiggleRotation
           alpha = if (isHiddenForTransition) 0f else 1f
         }
         .semantics { contentDescription = cdText }
@@ -135,13 +160,13 @@ fun AppIconItem(
               onBoundsMeasured(app.key, rect)
             }
             .shadow(
-              elevation = 6.dp,
-              shape = RoundedCornerShape(17.dp),
-              ambientColor = Color.Black.copy(alpha = 0.35f),
-              spotColor = Color.Black.copy(alpha = 0.35f),
+              elevation = 5.dp,
+              shape = iconShape,
+              ambientColor = Color.Black.copy(alpha = 0.32f),
+              spotColor = Color.Black.copy(alpha = 0.32f),
             )
-            .clip(RoundedCornerShape(17.dp))
-            .background(app.dominantColor.copy(alpha = 0.28f)),
+            .clip(iconShape)
+            .background(app.dominantColor.copy(alpha = 0.24f)),
         contentAlignment = Alignment.Center,
       ) {
         if (app.icon != null) {
@@ -156,7 +181,7 @@ fun AppIconItem(
             imageVector = Icons.Rounded.Apps,
             contentDescription = null,
             tint = Color.White,
-            modifier = Modifier.size(iconSize * 0.56f),
+            modifier = Modifier.size(iconSize * 0.54f),
           )
         }
       }
@@ -164,9 +189,7 @@ fun AppIconItem(
       if (isEditMode) {
         Box(
           modifier =
-            Modifier.size(20.dp)
-              .clip(CircleShape)
-              .background(Color.White.copy(alpha = 0.92f)),
+            Modifier.size(20.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.94f)),
           contentAlignment = Alignment.Center,
         ) {
           Icon(
@@ -180,7 +203,7 @@ fun AppIconItem(
     }
 
     if (showLabel) {
-      Spacer(modifier = Modifier.height(6.dp))
+      Spacer(modifier = Modifier.height(5.dp))
       Text(
         text = app.label,
         color = Color.White,

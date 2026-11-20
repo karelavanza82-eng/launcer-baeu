@@ -1,4 +1,4 @@
-name: Build Aura Home APK
+name: Build Aura Home Release APK
 
 on:
   push:
@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  build-debug-apk:
+  build-release-apk:
     runs-on: ubuntu-latest
 
     steps:
@@ -28,41 +28,51 @@ jobs:
             yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses || true
           fi
 
-      - name: Prepare debug keystore
-        run: |
-          if [ -f debug.keystore.base64 ]; then
-            base64 -d debug.keystore.base64 > debug.keystore
-          else
-            keytool -genkeypair -v -keystore debug.keystore -storepass android \
-              -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 \
-              -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
-          fi
-
       - name: Set up Gradle 9.3.1
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: 9.3.1
 
-      - name: Build Debug APK
+      - name: Prepare release signing and build Release APK
+        env:
+          SECRET_KEYSTORE_B64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          SECRET_STORE_PASS: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          SECRET_KEY_PASS: ${{ secrets.RELEASE_KEY_PASSWORD }}
         run: |
-          gradle :app:assembleDebug --no-daemon
-          cp app/build/outputs/apk/debug/app-debug.apk AuraHome-debug.apk
+          KEYSTORE_FILE="/tmp/aura-release-key.jks"
+          if [ -n "$SECRET_KEYSTORE_B64" ] && [ -n "$SECRET_STORE_PASS" ] && [ -n "$SECRET_KEY_PASS" ]; then
+            echo "$SECRET_KEYSTORE_B64" | base64 -d > "$KEYSTORE_FILE"
+            STORE_PASS="$SECRET_STORE_PASS"
+            KEY_PASS="$SECRET_KEY_PASS"
+          else
+            STORE_PASS="aurahome-release-key"
+            KEY_PASS="aurahome-release-key"
+            keytool -genkeypair -v -keystore "$KEYSTORE_FILE" \
+              -storepass "$STORE_PASS" -alias upload -keypass "$KEY_PASS" \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=Aura Home,O=AuraHome,C=ID"
+          fi
 
-      - name: Upload APK artifact
+          KEYSTORE_PATH="$KEYSTORE_FILE" STORE_PASSWORD="$STORE_PASS" KEY_PASSWORD="$KEY_PASS" \
+            gradle :app:assembleRelease --no-daemon
+
+          cp app/build/outputs/apk/release/app-release.apk AuraHome-release.apk
+          rm -f "$KEYSTORE_FILE"
+
+      - name: Upload Release APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: AuraHome-debug-apk
-          path: AuraHome-debug.apk
+          name: AuraHome-release-apk
+          path: AuraHome-release.apk
           retention-days: 30
 
-      - name: Publish APK to GitHub Releases
+      - name: Publish Release APK to GitHub Releases
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="latest-debug"
+          TAG="latest-release"
           gh release delete "$TAG" --yes || true
-          gh release create "$TAG" AuraHome-debug.apk \
-            --title "Aura Home Debug APK" \
-            --notes "Latest debug APK built automatically from commit ${{ github.sha }}." \
-            --prerelease
+          gh release create "$TAG" AuraHome-release.apk \
+            --title "Aura Home Release APK" \
+            --notes "Signed release APK built automatically from commit ${{ github.sha }}."

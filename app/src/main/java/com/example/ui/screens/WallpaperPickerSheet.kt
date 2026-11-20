@@ -16,11 +16,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AddPhotoAlternate
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Wallpaper
@@ -48,6 +50,7 @@ import com.example.model.WallpaperStyle
 fun WallpaperPickerSheet(
   selectedStyle: WallpaperStyle,
   onSelectStyle: (WallpaperStyle) -> Unit,
+  onPickGalleryPhoto: () -> Unit,
   onDismiss: () -> Unit,
   modifier: Modifier = Modifier,
 ) {
@@ -56,7 +59,7 @@ fun WallpaperPickerSheet(
   Surface(
     modifier = modifier.fillMaxWidth().testTag("wallpaper_picker_sheet"),
     shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-    color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.96f),
+    color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.97f),
     tonalElevation = 10.dp,
     shadowElevation = 24.dp,
   ) {
@@ -94,70 +97,115 @@ fun WallpaperPickerSheet(
         contentPadding = PaddingValues(horizontal = 20.dp),
         horizontalArrangement = Arrangement.spacedBy(14.dp),
       ) {
-        items(WallpaperStyle.entries) { style ->
-          val isSelected = style == selectedStyle
-          Column(
-            modifier =
-              Modifier.size(width = 96.dp, height = 164.dp)
-                .clip(RoundedCornerShape(20.dp))
-                .clickable { onSelectStyle(style) }
-                .testTag("wallpaper_option_${style.name.lowercase()}"),
-            horizontalAlignment = Alignment.CenterHorizontally,
-          ) {
-            Box(
-              modifier =
-                Modifier.fillMaxWidth()
-                  .weight(1f)
-                  .aspectRatio(0.65f)
-                  .clip(RoundedCornerShape(20.dp))
-                  .background(Brush.linearGradient(colors = style.previewColors))
-                  .border(
-                    width = if (isSelected) 2.5.dp else 1.dp,
-                    color =
-                      if (isSelected) MaterialTheme.colorScheme.primary
-                      else Color.White.copy(alpha = 0.25f),
-                    shape = RoundedCornerShape(20.dp),
-                  ),
-              contentAlignment = Alignment.Center,
-            ) {
-              if (style == WallpaperStyle.SYSTEM_WALLPAPER) {
-                Icon(
-                  imageVector = Icons.Rounded.Wallpaper,
-                  contentDescription = null,
-                  tint = Color.White.copy(alpha = 0.85f),
-                  modifier = Modifier.size(28.dp),
-                )
-              }
-              if (isSelected) {
-                Box(
-                  modifier =
-                    Modifier.align(Alignment.BottomEnd)
-                      .padding(8.dp)
-                      .size(24.dp)
-                      .clip(CircleShape)
-                      .background(MaterialTheme.colorScheme.primary),
-                  contentAlignment = Alignment.Center,
-                ) {
-                  Icon(
-                    imageVector = Icons.Rounded.Check,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onPrimary,
-                    modifier = Modifier.size(16.dp),
-                  )
-                }
-              }
-            }
-            Spacer(modifier = Modifier.height(6.dp))
-            Text(
-              text = style.title,
-              style = MaterialTheme.typography.labelSmall,
-              maxLines = 1,
-              overflow = TextOverflow.Ellipsis,
-              textAlign = TextAlign.Center,
-            )
-          }
+        // Gallery Photo Picker card (zero storage permission!)
+        item(key = "gallery_picker") {
+          val isSelected = selectedStyle == WallpaperStyle.CUSTOM_PHOTO
+          WallpaperPreviewCard(
+            title = stringResource(R.string.wallpaper_pick_gallery),
+            colors = WallpaperStyle.CUSTOM_PHOTO.previewColors,
+            isSelected = isSelected,
+            icon = Icons.Rounded.AddPhotoAlternate,
+            onClick = onPickGalleryPhoto,
+            testTag = "wallpaper_option_gallery",
+          )
+        }
+
+        // System Wallpaper option
+        item(key = "system_wallpaper") {
+          WallpaperPreviewCard(
+            title = WallpaperStyle.SYSTEM_WALLPAPER.title,
+            colors = WallpaperStyle.SYSTEM_WALLPAPER.previewColors,
+            isSelected = selectedStyle == WallpaperStyle.SYSTEM_WALLPAPER,
+            icon = Icons.Rounded.Wallpaper,
+            onClick = { onSelectStyle(WallpaperStyle.SYSTEM_WALLPAPER) },
+            testTag = "wallpaper_option_system_wallpaper",
+          )
+        }
+
+        // 14 Curated Aura procedural themes
+        items(WallpaperStyle.proceduralThemes, key = { it.name }) { style ->
+          WallpaperPreviewCard(
+            title = style.title,
+            colors = style.previewColors,
+            isSelected = style == selectedStyle,
+            icon = null,
+            onClick = { onSelectStyle(style) },
+            testTag = "wallpaper_option_${style.name.lowercase()}",
+          )
         }
       }
     }
+  }
+}
+
+@Composable
+private fun WallpaperPreviewCard(
+  title: String,
+  colors: List<Color>,
+  isSelected: Boolean,
+  icon: androidx.compose.ui.graphics.vector.ImageVector?,
+  onClick: () -> Unit,
+  testTag: String,
+) {
+  Column(
+    modifier =
+      Modifier.width(96.dp)
+        .height(164.dp)
+        .clip(RoundedCornerShape(20.dp))
+        .clickable(onClick = onClick)
+        .testTag(testTag),
+    horizontalAlignment = Alignment.CenterHorizontally,
+  ) {
+    Box(
+      modifier =
+        Modifier.fillMaxWidth()
+          .weight(1f)
+          .aspectRatio(0.65f)
+          .clip(RoundedCornerShape(20.dp))
+          .background(Brush.linearGradient(colors = colors))
+          .border(
+            width = if (isSelected) 2.5.dp else 1.dp,
+            color =
+              if (isSelected) MaterialTheme.colorScheme.primary
+              else Color.White.copy(alpha = 0.25f),
+            shape = RoundedCornerShape(20.dp),
+          ),
+      contentAlignment = Alignment.Center,
+    ) {
+      if (icon != null) {
+        Icon(
+          imageVector = icon,
+          contentDescription = null,
+          tint = Color.White.copy(alpha = 0.90f),
+          modifier = Modifier.size(28.dp),
+        )
+      }
+      if (isSelected) {
+        Box(
+          modifier =
+            Modifier.align(Alignment.BottomEnd)
+              .padding(8.dp)
+              .size(24.dp)
+              .clip(CircleShape)
+              .background(MaterialTheme.colorScheme.primary),
+          contentAlignment = Alignment.Center,
+        ) {
+          Icon(
+            imageVector = Icons.Rounded.Check,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onPrimary,
+            modifier = Modifier.size(16.dp),
+          )
+        }
+      }
+    }
+    Spacer(modifier = Modifier.height(6.dp))
+    Text(
+      text = title,
+      style = MaterialTheme.typography.labelSmall,
+      maxLines = 1,
+      overflow = TextOverflow.Ellipsis,
+      textAlign = TextAlign.Center,
+    )
   }
 }

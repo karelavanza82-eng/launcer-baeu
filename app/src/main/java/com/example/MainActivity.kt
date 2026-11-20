@@ -9,6 +9,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.material3.SnackbarHostState
@@ -48,16 +49,26 @@ class MainActivity : ComponentActivity() {
             viewModel.onLauncherResumed()
           }
 
+        val galleryWallpaperLauncher =
+          rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.PickVisualMedia()
+          ) { uri ->
+            if (uri != null) {
+              viewModel.applyGalleryWallpaper(uri)
+            }
+          }
+
         LaunchedEffect(Unit) {
           viewModel.messages.collectLatest { msg -> snackbarHostState.showSnackbar(msg) }
         }
 
-        // Standard Home launcher behavior: Back on the root desktop stays on Home
         BackHandler(
           enabled =
             !uiState.isEditMode &&
+              !uiState.isQuickFilterActive &&
               !uiState.showSettings &&
               !uiState.showWallpaperPicker &&
+              !uiState.showIconPackPicker &&
               uiState.contextMenuApp == null
         ) {
           homeResetSignal++
@@ -74,8 +85,14 @@ class MainActivity : ComponentActivity() {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
               val useWindowBlur =
                 uiState.preferences.wallpaperStyle == WallpaperStyle.SYSTEM_WALLPAPER &&
-                  uiState.preferences.blurWallpaperOnTransition
-              val radiusPx = if (useWindowBlur) (48f * progress).toInt() else 0
+                  uiState.preferences.blurWallpaperOnTransition &&
+                  uiState.preferences.blurRadiusDp > 0
+              val radiusPx =
+                if (useWindowBlur) {
+                  (uiState.preferences.blurRadiusDp * 2.2f * progress).toInt()
+                } else {
+                  0
+                }
               try {
                 window.setBackgroundBlurRadius(radiusPx)
               } catch (_: Exception) {}
@@ -87,18 +104,40 @@ class MainActivity : ComponentActivity() {
           onDismissContextMenu = { viewModel.dismissContextMenu() },
           onTogglePinToDock = { app -> viewModel.togglePinToDock(app) },
           onMoveApp = { app, delta -> viewModel.moveApp(app, delta) },
+          onHideApp = { app -> viewModel.hideApp(app) },
+          onUnhideApp = { app -> viewModel.unhideApp(app) },
           onOpenAppInfo = { app -> viewModel.openAppInfo(this@MainActivity, app) },
           onUninstallApp = { app -> viewModel.uninstallApp(this@MainActivity, app) },
+          onQuickFilterActiveChange = { active -> viewModel.setQuickFilterActive(active) },
+          onQuickFilterQueryChange = { query -> viewModel.setQuickFilterQuery(query) },
           onOpenSettings = { viewModel.setShowSettings(true) },
           onCloseSettings = { viewModel.setShowSettings(false) },
           onOpenWallpaperPicker = { viewModel.setShowWallpaperPicker(true) },
           onCloseWallpaperPicker = { viewModel.setShowWallpaperPicker(false) },
+          onOpenIconPackPicker = { viewModel.setShowIconPackPicker(true) },
+          onCloseIconPackPicker = { viewModel.setShowIconPackPicker(false) },
           onSelectWallpaper = { style -> viewModel.setWallpaperStyle(style) },
+          onPickGalleryWallpaper = {
+            galleryWallpaperLauncher.launch(
+              PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+            )
+          },
+          onSelectIconPack = { packId -> viewModel.setIconPackId(packId) },
+          onSelectIconShape = { shape -> viewModel.setIconShape(shape) },
+          onChangeIconSize = { sizeDp -> viewModel.setIconSizeDp(sizeDp) },
           onToggleBlurIcons = { enabled -> viewModel.setBlurIconsOnTransition(enabled) },
           onToggleBlurWallpaper = { enabled -> viewModel.setBlurWallpaperOnTransition(enabled) },
-          onSelectTransitionSpeed = { speed -> viewModel.setTransitionSpeed(speed) },
+          onChangeBlurRadius = { radius -> viewModel.setBlurRadiusDp(radius) },
+          onSelectAnimationCurve = { curve -> viewModel.setAnimationCurve(curve) },
+          onChangeAnimationDuration = { duration -> viewModel.setAnimationDurationMs(duration) },
+          onChangeSpringDamping = { damping -> viewModel.setSpringDampingRatio(damping) },
+          onChangeBackgroundScale = { scaleMin -> viewModel.setBackgroundScaleMin(scaleMin) },
+          onSelectPageEffect = { effect -> viewModel.setPageEffect(effect) },
           onSelectScrollMode = { mode -> viewModel.setScrollMode(mode) },
           onToggleShowLabels = { show -> viewModel.setShowLabels(show) },
+          onToggleDockBackground = { show -> viewModel.setShowDockBackground(show) },
+          onToggleQuickFilterPill = { show -> viewModel.setShowQuickFilterPill(show) },
+          onToggleLockLayout = { locked -> viewModel.setLockLayout(locked) },
           onSelectGridColumns = { cols -> viewModel.setGridColumns(cols) },
           onRequestDefaultLauncher = {
             try {

@@ -14,11 +14,8 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onNodeWithTag
-import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
-import androidx.compose.ui.test.printToString
-
 import androidx.test.core.app.ApplicationProvider
 import com.example.model.AppItem
 import com.example.model.LauncherPreferences
@@ -60,7 +57,7 @@ class ExampleRobolectricTest {
   }
 
   @Test
-  fun `launcher desktop renders pager, dock, and settings flow`() {
+  fun `launcher desktop renders pager, dock, icon pack picker, wallpaper picker, and settings`() {
     val desktopApps =
       List(6) { idx ->
         AppItem(
@@ -115,16 +112,36 @@ class ExampleRobolectricTest {
           onDismissContextMenu = { state = state.copy(contextMenuApp = null) },
           onTogglePinToDock = {},
           onMoveApp = { _, _ -> },
+          onHideApp = {},
+          onUnhideApp = {},
           onOpenAppInfo = {},
           onUninstallApp = {},
+          onQuickFilterActiveChange = { active ->
+            state = state.copy(isQuickFilterActive = active)
+          },
+          onQuickFilterQueryChange = { q -> state = state.copy(quickFilterQuery = q) },
           onOpenSettings = { state = state.copy(showSettings = true, isEditMode = false) },
           onCloseSettings = { state = state.copy(showSettings = false) },
           onOpenWallpaperPicker = {
             state = state.copy(showWallpaperPicker = true, isEditMode = false)
           },
           onCloseWallpaperPicker = { state = state.copy(showWallpaperPicker = false) },
+          onOpenIconPackPicker = {
+            state = state.copy(showIconPackPicker = true, isEditMode = false)
+          },
+          onCloseIconPackPicker = { state = state.copy(showIconPackPicker = false) },
           onSelectWallpaper = { style ->
             state = state.copy(preferences = state.preferences.copy(wallpaperStyle = style))
+          },
+          onPickGalleryWallpaper = {},
+          onSelectIconPack = { packId ->
+            state = state.copy(preferences = state.preferences.copy(iconPackId = packId))
+          },
+          onSelectIconShape = { shape ->
+            state = state.copy(preferences = state.preferences.copy(iconShape = shape))
+          },
+          onChangeIconSize = { size ->
+            state = state.copy(preferences = state.preferences.copy(iconSizeDp = size))
           },
           onToggleBlurIcons = { enabled ->
             state =
@@ -136,14 +153,38 @@ class ExampleRobolectricTest {
                 preferences = state.preferences.copy(blurWallpaperOnTransition = enabled)
               )
           },
-          onSelectTransitionSpeed = { speed ->
-            state = state.copy(preferences = state.preferences.copy(transitionSpeed = speed))
+          onChangeBlurRadius = { radius ->
+            state = state.copy(preferences = state.preferences.copy(blurRadiusDp = radius))
+          },
+          onSelectAnimationCurve = { curve ->
+            state = state.copy(preferences = state.preferences.copy(animationCurve = curve))
+          },
+          onChangeAnimationDuration = { duration ->
+            state = state.copy(preferences = state.preferences.copy(animationDurationMs = duration))
+          },
+          onChangeSpringDamping = { damping ->
+            state = state.copy(preferences = state.preferences.copy(springDampingRatio = damping))
+          },
+          onChangeBackgroundScale = { scale ->
+            state = state.copy(preferences = state.preferences.copy(backgroundScaleMin = scale))
+          },
+          onSelectPageEffect = { effect ->
+            state = state.copy(preferences = state.preferences.copy(pageEffect = effect))
           },
           onSelectScrollMode = { mode ->
             state = state.copy(preferences = state.preferences.copy(scrollMode = mode))
           },
           onToggleShowLabels = { show ->
             state = state.copy(preferences = state.preferences.copy(showLabels = show))
+          },
+          onToggleDockBackground = { show ->
+            state = state.copy(preferences = state.preferences.copy(showDockBackground = show))
+          },
+          onToggleQuickFilterPill = { show ->
+            state = state.copy(preferences = state.preferences.copy(showQuickFilterPill = show))
+          },
+          onToggleLockLayout = { locked ->
+            state = state.copy(preferences = state.preferences.copy(lockLayout = locked))
           },
           onSelectGridColumns = { cols ->
             state = state.copy(preferences = state.preferences.copy(gridColumns = cols))
@@ -162,7 +203,13 @@ class ExampleRobolectricTest {
     composeTestRule.onNodeWithTag("desktop_pager").performTouchInput { longClick() }
     composeTestRule.onNodeWithTag("edit_mode_toolbar").assertIsDisplayed()
 
-    // Open Home Settings via edit toolbar
+    // Open Icon Pack Picker
+    composeTestRule.onNodeWithTag("edit_icon_pack_button").performClick()
+    composeTestRule.onNodeWithTag("icon_pack_picker_sheet").assertIsDisplayed()
+    composeTestRule.onNodeWithTag("icon_pack_close_button").performClick()
+
+    // Re-enter edit mode and open Settings
+    composeTestRule.onNodeWithTag("desktop_pager").performTouchInput { longClick() }
     composeTestRule.onNodeWithTag("edit_settings_button").performClick()
     composeTestRule.onNodeWithTag("launcher_settings_screen").assertIsDisplayed()
     composeTestRule.onNodeWithTag("toggle_blur_icons").assertIsDisplayed()

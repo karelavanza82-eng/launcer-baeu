@@ -11,9 +11,7 @@ import android.content.pm.ApplicationInfo
 import android.content.pm.LauncherApps
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
-import android.graphics.Canvas
-import android.graphics.drawable.BitmapDrawable
-import android.graphics.drawable.Drawable
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
 import android.os.Process
@@ -21,11 +19,13 @@ import android.os.UserHandle
 import android.provider.Settings
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.core.content.ContextCompat
-import androidx.core.graphics.createBitmap
 import com.example.model.AppItem
+import com.example.model.BuiltInIconPack
+import com.example.model.ExternalIconPackInfo
+import java.io.File
+import java.io.FileOutputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
@@ -38,29 +38,24 @@ class InstalledAppsRepository(private val context: Context) {
   private val packageManager: PackageManager = context.packageManager
   private val launcherApps: LauncherApps? =
     context.getSystemService(Context.LAUNCHER_APPS_SERVICE) as? LauncherApps
+  private val iconPackManager = IconPackManager(context)
 
-  fun observeInstalledApps(): Flow<List<AppItem>> =
+  fun observePackageChanges(): Flow<Unit> =
     callbackFlow {
-        val sendLatest = {
-          trySend(loadInstalledAppsSync())
-          Unit
-        }
-
-        // Emit initial snapshot immediately
-        sendLatest()
+        trySend(Unit)
 
         val launcherCallback =
           object : LauncherApps.Callback() {
             override fun onPackageRemoved(packageName: String, user: UserHandle) {
-              sendLatest()
+              trySend(Unit)
             }
 
             override fun onPackageAdded(packageName: String, user: UserHandle) {
-              sendLatest()
+              trySend(Unit)
             }
 
             override fun onPackageChanged(packageName: String, user: UserHandle) {
-              sendLatest()
+              trySend(Unit)
             }
 
             override fun onPackagesAvailable(
@@ -68,7 +63,7 @@ class InstalledAppsRepository(private val context: Context) {
               user: UserHandle,
               replacing: Boolean,
             ) {
-              sendLatest()
+              trySend(Unit)
             }
 
             override fun onPackagesUnavailable(
@@ -76,14 +71,14 @@ class InstalledAppsRepository(private val context: Context) {
               user: UserHandle,
               replacing: Boolean,
             ) {
-              sendLatest()
+              trySend(Unit)
             }
           }
 
         val packageReceiver =
           object : BroadcastReceiver() {
             override fun onReceive(ctx: Context?, intent: Intent?) {
-              sendLatest()
+              trySend(Unit)
             }
           }
 
@@ -119,12 +114,21 @@ class InstalledAppsRepository(private val context: Context) {
       }
       .conflate()
 
-  suspend fun getInstalledApps(): List<AppItem> =
-    withContext(Dispatchers.IO) { loadInstalledAppsSync() }
+  suspend fun getExternalIconPacks(): List<ExternalIconPackInfo> =
+    withContext(Dispatchers.IO) { iconPackManager.discoverExternalIconPacks() }
 
-  private fun loadInstalledAppsSync(): List<AppItem> {
+  suspend fun getInstalledApps(iconPackId: String = BuiltInIconPack.SYSTEM.id): List<AppItem> =
+    withContext(Dispatchers.IO) { loadInstalledAppsSync(iconPackId) }
+
+  private fun loadInstalledAppsSync(iconPackId: String): List<AppItem> {
     val ownPackage = context.packageName
     val appsByComponent = LinkedHashMap<String, AppItem>()
+    val externalPack =
+      if (iconPackId.startsWith("pkg:")) {
+        iconPackManager.loadExternalPack(iconPackId.removePrefix("pkg:"))
+      } else {
+        null
+      }
 
     val launcherActivities =
       try {
@@ -148,8 +152,8 @@ class InstalledAppsRepository(private val context: Context) {
               null
             }
           }
-        val bitmap = drawable?.let { drawableToBitmap(it) }
-        val dominant = bitmap?.let { extractDominantColor(it) } ?: Color(0xFF4A5588)
+        val (bitmap, dominant) =
+          iconPackManager.resolveStyledIcon(component, drawable, iconPackId, externalPack)
         val isSystem = (info.applicationInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
         appsByComponent[key] =
           AppItem(
@@ -163,14 +167,10 @@ class InstalledAppsRepository(private val context: Context) {
           )
       }
     } else {
-      val intent =
-        Intent(Intent.ACTION_MAIN).apply { addCategory(Intent.CATEGORY_LAUNCHER) }
+      val intent = Intent(Intent.ACTION_MAIN).apply { addCategory(Intent.CATEGORY_LAUNCHER) }
       val resolved =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-          packageManager.queryIntentActivities(
-            intent,
-            PackageManager.ResolveInfoFlags.of(0L),
-          )
+          packageManager.queryIntentActivities(intent, PackageManager.ResolveInfoFlags.of(0L))
         } else {
           @Suppress("DEPRECATION")
           packageManager.queryIntentActivities(intent, 0)
@@ -188,10 +188,9 @@ class InstalledAppsRepository(private val context: Context) {
           } catch (_: Exception) {
             null
           }
-        val bitmap = drawable?.let { drawableToBitmap(it) }
-        val dominant = bitmap?.let { extractDominantColor(it) } ?: Color(0xFF4A5588)
-        val isSystem =
-          (activityInfo.applicationInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
+        val (bitmap, dominant) =
+          iconPackManager.resolveStyledIcon(component, drawable, iconPackId, externalPack)
+        val isSystem = (activityInfo.applicationInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
         val label =
           try {
             resolveInfo.loadLabel(packageManager).toString().trim()
@@ -214,21 +213,47 @@ class InstalledAppsRepository(private val context: Context) {
     return appsByComponent.values.sortedBy { it.label.lowercase() }
   }
 
+  suspend fun saveCustomWallpaper(uri: Uri): String? =
+    withContext(Dispatchers.IO) {
+      try {
+        val input = context.contentResolver.openInputStream(uri) ?: return@withContext null
+        val decoded = input.use { BitmapFactory.decodeStream(it) } ?: return@withContext null
+        val maxDim = 2160f
+        val scale = minOf(maxDim / decoded.width, maxDim / decoded.height, 1f)
+        val finalBmp =
+          if (scale < 1f) {
+            Bitmap.createScaledBitmap(
+              decoded,
+              (decoded.width * scale).toInt().coerceAtLeast(1),
+              (decoded.height * scale).toInt().coerceAtLeast(1),
+              true,
+            )
+          } else {
+            decoded
+          }
+        val outFile = File(context.filesDir, "custom_wallpaper_${System.currentTimeMillis()}.jpg")
+        // Remove previous saved custom wallpaper files to keep storage clean
+        context.filesDir
+          .listFiles()
+          ?.filter { it.name.startsWith("custom_wallpaper_") && it.name != outFile.name }
+          ?.forEach { it.delete() }
+        FileOutputStream(outFile).use { fos ->
+          finalBmp.compress(Bitmap.CompressFormat.JPEG, 92, fos)
+        }
+        outFile.absolutePath
+      } catch (_: Exception) {
+        null
+      }
+    }
+
   fun launchApp(activityContext: Context, app: AppItem, sourceBounds: Rect?): Boolean {
     val optionsBundle =
       try {
-        if (sourceBounds != null && !sourceBounds.isEmpty) {
-          ActivityOptions.makeCustomAnimation(activityContext, android.R.anim.fade_in, 0)
-            .toBundle()
-        } else {
-          ActivityOptions.makeCustomAnimation(activityContext, android.R.anim.fade_in, 0)
-            .toBundle()
-        }
+        ActivityOptions.makeCustomAnimation(activityContext, android.R.anim.fade_in, 0).toBundle()
       } catch (_: Exception) {
         null
       }
 
-    // Prefer LauncherApps.startMainActivity for exact component launch
     try {
       val la = launcherApps
       if (la != null) {
@@ -246,7 +271,6 @@ class InstalledAppsRepository(private val context: Context) {
       }
     } catch (_: Exception) {}
 
-    // Fallback to explicit component intent
     return try {
       val launchIntent =
         Intent(Intent.ACTION_MAIN).apply {
@@ -301,8 +325,7 @@ class InstalledAppsRepository(private val context: Context) {
       val roleManager = context.getSystemService(RoleManager::class.java)
       roleManager?.isRoleHeld(RoleManager.ROLE_HOME) == true
     } else {
-      val homeIntent =
-        Intent(Intent.ACTION_MAIN).apply { addCategory(Intent.CATEGORY_HOME) }
+      val homeIntent = Intent(Intent.ACTION_MAIN).apply { addCategory(Intent.CATEGORY_HOME) }
       val resolved = packageManager.resolveActivity(homeIntent, PackageManager.MATCH_DEFAULT_ONLY)
       resolved?.activityInfo?.packageName == context.packageName
     }
@@ -316,55 +339,5 @@ class InstalledAppsRepository(private val context: Context) {
       }
     }
     return Intent(Settings.ACTION_HOME_SETTINGS)
-  }
-
-  private fun drawableToBitmap(drawable: Drawable): Bitmap {
-    if (drawable is BitmapDrawable && drawable.bitmap != null) {
-      return drawable.bitmap
-    }
-    val size = 192
-    val bitmap = createBitmap(size, size, Bitmap.Config.ARGB_8888)
-    val canvas = Canvas(bitmap)
-    drawable.setBounds(0, 0, canvas.width, canvas.height)
-    drawable.draw(canvas)
-    return bitmap
-  }
-
-  private fun extractDominantColor(bitmap: Bitmap): Color {
-    val w = bitmap.width
-    val h = bitmap.height
-    if (w <= 0 || h <= 0) return Color(0xFF4A5588)
-
-    var rSum = 0L
-    var gSum = 0L
-    var bSum = 0L
-    var count = 0L
-
-    val stepX = (w / 8).coerceAtLeast(1)
-    val stepY = (h / 8).coerceAtLeast(1)
-    for (y in stepY until h step stepY) {
-      for (x in stepX until w step stepX) {
-        val pixel = bitmap.getPixel(x, y)
-        val alpha = (pixel ushr 24) and 0xFF
-        if (alpha < 180) continue
-        val r = (pixel ushr 16) and 0xFF
-        val g = (pixel ushr 8) and 0xFF
-        val b = pixel and 0xFF
-        // Avoid near-pure white or near-pure black for richer tint cards
-        val max = maxOf(r, g, b)
-        val min = minOf(r, g, b)
-        val weight = if (max - min > 24) 3L else 1L
-        rSum += r * weight
-        gSum += g * weight
-        bSum += b * weight
-        count += weight
-      }
-    }
-
-    if (count == 0L) return Color(0xFF4A5588)
-    val avgR = ((rSum / count).toInt()).coerceIn(28, 235)
-    val avgG = ((gSum / count).toInt()).coerceIn(28, 235)
-    val avgB = ((bSum / count).toInt()).coerceIn(28, 235)
-    return Color(red = avgR, green = avgG, blue = avgB)
   }
 }
